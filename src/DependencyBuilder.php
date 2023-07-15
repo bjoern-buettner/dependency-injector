@@ -4,6 +4,16 @@ declare(strict_types=1);
 
 namespace Me\BjoernBuettner\DependencyInjector;
 
+use Me\BjoernBuettner\DependencyInjector\DTOs\FactoryMap;
+use Me\BjoernBuettner\DependencyInjector\DTOs\InterfaceMap;
+use Me\BjoernBuettner\DependencyInjector\DTOs\ParameterMap;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\InvalidEnvironment;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\UninstanciableClass;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\UninvokableMethod;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableClass;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableMethod;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableParameter;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableRecursion;
 use Psr\Container\ContainerInterface;
 use ReflectionClass;
 use ReflectionException;

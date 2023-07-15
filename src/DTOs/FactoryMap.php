@@ -1,6 +1,8 @@
 <?php
 
-namespace Me\BjoernBuettner\DependencyInjector;
+namespace Me\BjoernBuettner\DependencyInjector\DTOs;
+
+use Me\BjoernBuettner\DependencyInjector\Mapping;
 
 final class FactoryMap implements Mapping
 {

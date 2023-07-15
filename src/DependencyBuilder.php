@@ -11,6 +11,7 @@ use Me\BjoernBuettner\DependencyInjector\Exceptions\InvalidEnvironment;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UninstanciableClass;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UninvokableMethod;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableClass;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableMap;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableMethod;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableParameter;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableRecursion;
@@ -21,6 +22,9 @@ use ReflectionMethod;
 use ReflectionParameter;
 use Symfony\Component\String\UnicodeString;
 
+/**
+ * @public This class is the entry point of the dependency injection container.
+ */
 final class DependencyBuilder implements ContainerInterface
 {
     /**
@@ -65,8 +69,8 @@ final class DependencyBuilder implements ContainerInterface
             if (!is_string($key) || !is_string($value)) {
                 throw new InvalidEnvironment("Environment must be an array of string keys and values.");
             }
-            if (!preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $key)) {
-                throw new InvalidEnvironment("Environment key $key must be snake case.");
+            if (!preg_match('/^[A-Z][A-Z0-9_]*$/', $key)) {
+                throw new InvalidEnvironment("Environment key $key must be upper snake case.");
             }
             $this->environment[(new UnicodeString($key))->lower()->camel()->toString()] = $value;
         }
@@ -76,19 +80,23 @@ final class DependencyBuilder implements ContainerInterface
                     throw new UnresolvableClass("Class {$map->class} does not exist.");
                 }
                 $this->parameters[$map->class . '.' . $map->parameter] = $map->value;
+                continue;
             }
             if ($map instanceof InterfaceMap) {
                 if ($validateOnConstruct && !class_exists($map->implementation)) {
                     throw new UnresolvableClass("Class {$map->implementation} does not exist.");
                 }
                 $this->interfaces[$map->interface] = $map->implementation;
+                continue;
             }
             if ($map instanceof FactoryMap) {
                 if ($validateOnConstruct && !class_exists($map->factory)) {
                     throw new UnresolvableClass("Class {$map->factory} does not exist.");
                 }
                 $this->factories[$map->created] = [$map->factory, $map->method];
+                continue;
             }
+            throw new UnresolvableMap('Unknown map type ' . get_class($map));
         }
     }
 

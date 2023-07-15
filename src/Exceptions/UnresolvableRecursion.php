@@ -6,6 +6,6 @@ namespace Me\BjoernBuettner\DependencyInjector\Exceptions;
 use Psr\Container\ContainerExceptionInterface;
 use UnexpectedValueException;
 
-class UnresolvableRecursion extends UnexpectedValueException implements ContainerExceptionInterface
+final class UnresolvableRecursion extends UnexpectedValueException implements ContainerExceptionInterface
 {
 }

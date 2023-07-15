@@ -6,6 +6,6 @@ namespace Me\BjoernBuettner\DependencyInjector\Exceptions;
 use InvalidArgumentException;
 use Psr\Container\ContainerExceptionInterface;
 
-final class UnresolvableMethod extends InvalidArgumentException implements ContainerExceptionInterface
+final class UnresolvableMap extends InvalidArgumentException implements ContainerExceptionInterface
 {
 }

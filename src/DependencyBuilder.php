@@ -124,6 +124,15 @@ final class DependencyBuilder implements ContainerInterface
                     default => (string)$this->environment[$key],
                 };
             }
+            if (isset($this->environment[$param->getName()])) {
+                return match ($param->getType()->getName()) {
+                    'int' => (int)$this->environment[$param->getName()],
+                    'float' => (float)$this->environment[$param->getName()],
+                    'bool' => $this->environment[$param->getName()] === 'true',
+                    'array' => explode(',', $this->environment[$param->getName()]),
+                    default => (string)$this->environment[$param->getName()],
+                };
+            }
             if ($type->allowsNull()) {
                 return null;
             }

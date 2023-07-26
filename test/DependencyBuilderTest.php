@@ -4,9 +4,11 @@ namespace Me\BjoernBuettner\DependencyInjector;
 
 use Me\BjoernBuettner\DependencyInjector\DTOs\FactoryMap;
 use Me\BjoernBuettner\DependencyInjector\DTOs\InterfaceMap;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
+#[CoversClass(DependencyBuilder::class)]
 class DependencyBuilderTest extends TestCase
 {
     public function testBuild(): void

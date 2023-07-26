@@ -19,6 +19,7 @@ use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableParameter;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableRecursion;
 use Me\BjoernBuettner\DependencyInjector\Factories\Environment;
 use Me\BjoernBuettner\DependencyInjector\Factories\Reflection;
+use Me\BjoernBuettner\DependencyInjector\Factories\Type;
 use Psr\Container\ContainerInterface;
 use ReflectionClass;
 use ReflectionException;
@@ -53,16 +54,19 @@ final class DependencyBuilder implements ContainerInterface
      * @var array<string, string>
      */
     private array $factories = [];
+
     /**
      * @var array<int, bool>
      */
     private array $building = [];
     private EnvironmentAccess $environment;
+
     /**
      * @var array<string, string>
      */
     private array $intersections = [];
     private ReflectionFactory $reflectionFactory;
+    private TypeFactory $typeFactory;
 
     /**
      * @param array<int, string> $environment
@@ -73,8 +77,10 @@ final class DependencyBuilder implements ContainerInterface
         ?array $environment = null,
         bool $validateOnConstruct = false,
         ?ReflectionFactory $reflectionFactory = null,
+        ?TypeFactory $typeFactory = null,
         ParameterMap|InterfaceMap|FactoryMap|IntersectionMap ...$maps,
     ) {
+        $this->typeFactory = $typeFactory ?? new Type();
         $this->reflectionFactory = $reflectionFactory ?? new Reflection();
         $this->environment = new Environment($environment);
         foreach ($maps as $map) {
@@ -121,89 +127,30 @@ final class DependencyBuilder implements ContainerInterface
         if (isset($variables[$key])) {
             return $variables[$key];
         }
-        if ($type = $param->getType()) {
-            if ($type instanceof ReflectionUnionType) {
-                foreach ($type->getTypes() as $unionType) {
-                    if ($unionType instanceof ReflectionNamedType) {
-                        if (!$unionType->isBuiltin()) {
-                            try {
-                                return $this->build($unionType->getName());
-                            } catch (UnresolvableClass) {
-                            }
-                        }
-                    }
-                }
-                foreach ($type->getTypes() as $unionType) {
-                    if ($unionType instanceof ReflectionNamedType) {
-                        if ($unionType->isBuiltin()) {
-                            foreach ([$key, $param->getName()] as $name) {
-                                try {
-                                    return $this->getEnvironment($name, $unionType->getName());
-                                } catch (NotInEnvironment) {
-                                    // ignore
-                                }
-                            }
-                        }
-                    }
-                }
-                foreach ($type->getTypes() as $unionType) {
-                    if ($unionType instanceof ReflectionNamedType) {
-                        if ($unionType->allowsNull()) {
-                            return null;
-                        }
-                    }
-                }
-                if ($param->isDefaultValueAvailable()) {
-                    return $param->getDefaultValue();
-                }
-                throw new UnresolvableParameter("Cannot resolve parameter {$param->getName()}.");
-            }
-            if ($type instanceof ReflectionIntersectionType) {
-                $names = [];
-                foreach ($type->getTypes() as $intersectionType) {
-                    if ($intersectionType instanceof ReflectionNamedType) {
-                        $names[] = $intersectionType->getName();
-                    }
-                }
-                sort($names, SORT_STRING);
-                $key = implode('&', $names);
-                if (isset($this->intersections[$key])) {
-                    return $this->build($this->intersections[$key]);
-                }
-                foreach ($type->getTypes() as $intersectionType) {
-                    if ($intersectionType instanceof ReflectionNamedType) {
-                        $object = $this->build($intersectionType->getName());
-                        foreach ($names as $name) {
-                            if (!($object instanceof $name)) {
-                                continue 2;
-                            }
-                        }
+        $parameter = $this->typeFactory->parameter($param);
+        if ($classes = $parameter->getClasses()) {
+            foreach ($classes as $class) {
+                try {
+                    $object = $this->build($class);
+                    if ($parameter->areRequirementsMet($object)) {
                         return $object;
                     }
+                } catch (UnresolvableClass) {
                 }
-                foreach ($type->getTypes() as $intersectionType) {
-                    if ($intersectionType instanceof ReflectionNamedType) {
-                        if ($intersectionType->allowsNull()) {
-                            return null;
-                        }
-                    }
-                }
-                throw new UnresolvableParameter("Cannot resolve parameter {$param->getName()}.");
             }
-            if (!$type->isBuiltin()) {
-                return $this->build($type->getName());
-            }
+        }
+        if (!in_array($parameter->getBasicType(), ['object', 'callable', 'resource'], true)) {
             try {
-                return $this->environment->get($type->getName(), $key, $param->getName());
+                return $this->environment->get($parameter->getBasicType(), $key, $param->getName());
             } catch (NotInEnvironment) {
                 // ignore
             }
-            if ($type->allowsNull()) {
-                return null;
-            }
         }
-        if ($param->isDefaultValueAvailable()) {
-            return $param->getDefaultValue();
+        if (!$parameter->hasDefault()) {
+            return $parameter->getDefault();
+        }
+        if ($parameter->isNullable()) {
+            return null;
         }
         throw new UnresolvableParameter("Cannot resolve parameter {$param->getName()}.");
     }
@@ -250,12 +197,8 @@ final class DependencyBuilder implements ContainerInterface
                 }
             }
         }
-        $params = $constructor->getParameters();
         $this->building[$class] = true;
-        $args = [];
-        foreach ($params as $param) {
-            $args[] = $this->getParamValue($param, $this->parameters, $class . '.' . $param->getName());
-        }
+        $args = $this->getArguments($constructor->getParameters(), $this->parameters);
         unset($this->building[$class]);
         try {
             return $this->cache[$class] = $rc->newInstanceArgs($args);
@@ -281,16 +224,26 @@ final class DependencyBuilder implements ContainerInterface
         } catch (ReflectionException $e) {
             throw new UnresolvableMethod("Cannot resolve method $class::$method.", 0, $e);
         }
-        $params = $rm->getParameters();
-        $args = [];
-        foreach ($params as $param) {
-            $args[] = $this->getParamValue($param, $variables, $param->getName());
-        }
+        $args = $this->getArguments($rm->getParameters(), $variables);
         try {
             return $rm->invokeArgs($object, $args);
         } catch (ReflectionException $e) {
             throw new UninvokableMethod("Cannot invoke method $class::$method.", 0, $e);
         }
+    }
+
+    /**
+     * @param array<int, ReflectionParameter> $parameters
+     * @param array<string, mixed> $variables
+     * @return array<int, mixed>
+     */
+    private function getArguments(array $parameters, array $variables): array
+    {
+        $args = [];
+        foreach ($parameters as $param) {
+            $args[] = $this->getParamValue($param, $variables, $param->getName());
+        }
+        return $args;
     }
 
     /**

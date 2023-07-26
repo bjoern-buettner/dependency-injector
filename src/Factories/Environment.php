@@ -50,8 +50,8 @@ class Environment implements EnvironmentAccess
                 'int' => (int)$this->environment[$name],
                 'float' => (float)$this->environment[$name],
                 'bool' => $this->environment[$name] === 'true',
-                'array' => explode(',', $this->environment[$name]),
-                default => (string)$this->environment[$name],
+                'array' => array_values(array_filter(array_map('trim', explode(',', $this->environment[$name])))),
+                default => $this->environment[$name],
             };
         }
         throw new NotInEnvironment("{$name} not found in environment");

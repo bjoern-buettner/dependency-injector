@@ -9,6 +9,7 @@ use Me\BjoernBuettner\DependencyInjector\DTOs\InterfaceMap;
 use Me\BjoernBuettner\DependencyInjector\DTOs\IntersectionMap;
 use Me\BjoernBuettner\DependencyInjector\DTOs\ParameterMap;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\InvalidEnvironment;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\NotInEnvironment;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UninstanciableClass;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UninvokableMethod;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableClass;

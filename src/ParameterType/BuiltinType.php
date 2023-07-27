@@ -5,7 +5,7 @@ namespace Me\BjoernBuettner\DependencyInjector\ParameterType;
 
 use ReflectionParameter;
 
-class BuiltinType extends Base
+final class BuiltinType extends Base
 {
     public function __construct(ReflectionParameter $parameter)
     {

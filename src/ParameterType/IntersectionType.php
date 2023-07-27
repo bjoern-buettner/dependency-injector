@@ -5,7 +5,7 @@ namespace Me\BjoernBuettner\DependencyInjector\ParameterType;
 
 use ReflectionParameter;
 
-class IntersectionType extends Base
+final class IntersectionType extends Base
 {
     public function __construct(ReflectionParameter $parameter) {
         $classes = [];

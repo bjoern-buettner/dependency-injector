@@ -4,9 +4,10 @@ declare(strict_types=1);
 namespace Me\BjoernBuettner\DependencyInjector\Factories;
 
 use Me\BjoernBuettner\DependencyInjector\ParameterType;
+use Me\BjoernBuettner\DependencyInjector\TypeFactory;
 use ReflectionParameter;
 
-class Type
+final class Type implements TypeFactory
 {
     public function parameter(ReflectionParameter $parameter): ParameterType\Base
     {

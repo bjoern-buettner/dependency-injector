@@ -5,7 +5,7 @@ namespace Me\BjoernBuettner\DependencyInjector\ParameterType;
 
 use ReflectionParameter;
 
-class UnionType extends Base
+final class UnionType extends Base
 {
     public function __construct(ReflectionParameter $parameter) {
         $classes = [];

@@ -12,13 +12,17 @@ abstract class Base implements ParameterType
     private string $name;
     private bool $hasDefault;
     private mixed $default;
+    private array $classes;
 
-    public function __construct(ReflectionParameter $parameter, private readonly array $classes, private readonly string $basicType, private readonly bool $mustImplementAll)
+    public function __construct(ReflectionParameter $parameter, array $classes, private readonly string $basicType, private readonly bool $mustImplementAll)
     {
         $this->name = $parameter->getName();
         $this->nullable = $parameter->allowsNull();
         $this->hasDefault = $parameter->isDefaultValueAvailable();
         $this->default = $this->hasDefault ? $parameter->getDefaultValue() : null;
+        $classes = array_unique($classes);
+        sort($classes, SORT_STRING);
+        $this->classes = $classes;
     }
     public function isNullable(): bool
     {

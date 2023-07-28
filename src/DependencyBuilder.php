@@ -13,7 +13,6 @@ use Me\BjoernBuettner\DependencyInjector\Exceptions\NotInEnvironment;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UninstanciableClass;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UninvokableMethod;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableClass;
-use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableMap;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableMethod;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableParameter;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableRecursion;
@@ -21,14 +20,10 @@ use Me\BjoernBuettner\DependencyInjector\Factories\Environment;
 use Me\BjoernBuettner\DependencyInjector\Factories\Reflection;
 use Me\BjoernBuettner\DependencyInjector\Factories\Type;
 use Psr\Container\ContainerInterface;
-use ReflectionClass;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use ReflectionException;
-use ReflectionIntersectionType;
-use ReflectionMethod;
-use ReflectionNamedType;
 use ReflectionParameter;
-use ReflectionUnionType;
-use Symfony\Component\String\UnicodeString;
 
 /**
  * @public This class is the entry point of the dependency injection container.
@@ -67,6 +62,7 @@ final class DependencyBuilder implements ContainerInterface
     private array $intersections = [];
     private ReflectionFactory $reflectionFactory;
     private TypeFactory $typeFactory;
+    private LoggerInterface $logger;
 
     /**
      * @param array<int, string> $environment
@@ -75,44 +71,28 @@ final class DependencyBuilder implements ContainerInterface
      */
     public function __construct(
         ?array $environment = null,
-        bool $validateOnConstruct = false,
         ?ReflectionFactory $reflectionFactory = null,
         ?TypeFactory $typeFactory = null,
+        LoggerInterface $logger = null,
         ParameterMap|InterfaceMap|FactoryMap|IntersectionMap ...$maps,
     ) {
         $this->typeFactory = $typeFactory ?? new Type();
         $this->reflectionFactory = $reflectionFactory ?? new Reflection();
+        $this->logger = $logger ?? new NullLogger();
         $this->environment = new Environment($environment);
         foreach ($maps as $map) {
             if ($map instanceof ParameterMap) {
-                if ($validateOnConstruct && !class_exists($map->class)) {
-                    throw new UnresolvableClass("Class {$map->class} does not exist.");
-                }
                 $this->parameters[$map->class . '.' . $map->parameter] = $map->value;
-                continue;
             }
             if ($map instanceof InterfaceMap) {
-                if ($validateOnConstruct && !class_exists($map->implementation)) {
-                    throw new UnresolvableClass("Class {$map->implementation} does not exist.");
-                }
                 $this->interfaces[$map->interface] = $map->implementation;
-                continue;
             }
             if ($map instanceof FactoryMap) {
-                if ($validateOnConstruct && !class_exists($map->factory)) {
-                    throw new UnresolvableClass("Class {$map->factory} does not exist.");
-                }
                 $this->factories[$map->created] = [$map->factory, $map->method];
-                continue;
             }
             if ($map instanceof IntersectionMap) {
-                if ($validateOnConstruct && !class_exists($map->className)) {
-                    throw new UnresolvableClass("Class {$map->className} does not exist.");
-                }
                 $this->intersections[implode('&', $map->intersectionMap)] = $map->className;
-                continue;
             }
-            throw new UnresolvableMap('Unknown map type ' . get_class($map));
         }
     }
 
@@ -129,6 +109,9 @@ final class DependencyBuilder implements ContainerInterface
         }
         $parameter = $this->typeFactory->parameter($param);
         if ($classes = $parameter->getClasses()) {
+            if (isset($this->intersections[implode('&', $classes)])) {
+                return $this->build($this->intersections[implode('&', $classes)]);
+            }
             foreach ($classes as $class) {
                 try {
                     $object = $this->build($class);

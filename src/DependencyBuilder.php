@@ -6,21 +6,24 @@ namespace Me\BjoernBuettner\DependencyInjector;
 
 use Me\BjoernBuettner\DependencyInjector\DTOs\FactoryMap;
 use Me\BjoernBuettner\DependencyInjector\DTOs\InterfaceMap;
+use Me\BjoernBuettner\DependencyInjector\DTOs\IntersectionMap;
 use Me\BjoernBuettner\DependencyInjector\DTOs\ParameterMap;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\InvalidEnvironment;
+use Me\BjoernBuettner\DependencyInjector\Exceptions\NotInEnvironment;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UninstanciableClass;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UninvokableMethod;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableClass;
-use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableMap;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableMethod;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableParameter;
 use Me\BjoernBuettner\DependencyInjector\Exceptions\UnresolvableRecursion;
+use Me\BjoernBuettner\DependencyInjector\Factories\Environment;
+use Me\BjoernBuettner\DependencyInjector\Factories\Reflection;
+use Me\BjoernBuettner\DependencyInjector\Factories\Type;
 use Psr\Container\ContainerInterface;
-use ReflectionClass;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use ReflectionException;
-use ReflectionMethod;
 use ReflectionParameter;
-use Symfony\Component\String\UnicodeString;
 
 /**
  * @public This class is the entry point of the dependency injection container.
@@ -46,14 +49,20 @@ final class DependencyBuilder implements ContainerInterface
      * @var array<string, string>
      */
     private array $factories = [];
+
     /**
      * @var array<int, bool>
      */
     private array $building = [];
+    private EnvironmentAccess $environment;
+
     /**
-     * @var array<int, string>
+     * @var array<string, string>
      */
-    private array $environment = [];
+    private array $intersections = [];
+    private ReflectionFactory $reflectionFactory;
+    private TypeFactory $typeFactory;
+    private LoggerInterface $logger;
 
     /**
      * @param array<int, string> $environment
@@ -62,41 +71,28 @@ final class DependencyBuilder implements ContainerInterface
      */
     public function __construct(
         ?array $environment = null,
-        bool $validateOnConstruct = false,
-        Mapping ...$maps,
+        ?ReflectionFactory $reflectionFactory = null,
+        ?TypeFactory $typeFactory = null,
+        LoggerInterface $logger = null,
+        ParameterMap|InterfaceMap|FactoryMap|IntersectionMap ...$maps,
     ) {
-        foreach (($environment ?? $_ENV) as $key => $value) {
-            if (!is_string($key) || !is_string($value)) {
-                throw new InvalidEnvironment("Environment must be an array of string keys and values.");
-            }
-            if (!preg_match('/^[A-Z][A-Z0-9_]*$/', $key)) {
-                throw new InvalidEnvironment("Environment key $key must be upper snake case.");
-            }
-            $this->environment[(new UnicodeString($key))->lower()->camel()->toString()] = $value;
-        }
+        $this->typeFactory = $typeFactory ?? new Type();
+        $this->reflectionFactory = $reflectionFactory ?? new Reflection();
+        $this->logger = $logger ?? new NullLogger();
+        $this->environment = new Environment($environment);
         foreach ($maps as $map) {
             if ($map instanceof ParameterMap) {
-                if ($validateOnConstruct && !class_exists($map->class)) {
-                    throw new UnresolvableClass("Class {$map->class} does not exist.");
-                }
                 $this->parameters[$map->class . '.' . $map->parameter] = $map->value;
-                continue;
             }
             if ($map instanceof InterfaceMap) {
-                if ($validateOnConstruct && !class_exists($map->implementation)) {
-                    throw new UnresolvableClass("Class {$map->implementation} does not exist.");
-                }
                 $this->interfaces[$map->interface] = $map->implementation;
-                continue;
             }
             if ($map instanceof FactoryMap) {
-                if ($validateOnConstruct && !class_exists($map->factory)) {
-                    throw new UnresolvableClass("Class {$map->factory} does not exist.");
-                }
                 $this->factories[$map->created] = [$map->factory, $map->method];
-                continue;
             }
-            throw new UnresolvableMap('Unknown map type ' . get_class($map));
+            if ($map instanceof IntersectionMap) {
+                $this->intersections[implode('&', $map->intersectionMap)] = $map->className;
+            }
         }
     }
 
@@ -111,34 +107,33 @@ final class DependencyBuilder implements ContainerInterface
         if (isset($variables[$key])) {
             return $variables[$key];
         }
-        if ($type = $param->getType()) {
-            if (!$type->isBuiltin()) {
-                return $this->build($type->getName());
+        $parameter = $this->typeFactory->parameter($param);
+        if ($classes = $parameter->getClasses()) {
+            if (isset($this->intersections[implode('&', $classes)])) {
+                return $this->build($this->intersections[implode('&', $classes)]);
             }
-            if (isset($this->environment[$key])) {
-                return match ($param->getType()->getName()) {
-                    'int' => (int)$this->environment[$key],
-                    'float' => (float)$this->environment[$key],
-                    'bool' => $this->environment[$key] === 'true',
-                    'array' => explode(',', $this->environment[$key]),
-                    default => (string)$this->environment[$key],
-                };
-            }
-            if (isset($this->environment[$param->getName()])) {
-                return match ($param->getType()->getName()) {
-                    'int' => (int)$this->environment[$param->getName()],
-                    'float' => (float)$this->environment[$param->getName()],
-                    'bool' => $this->environment[$param->getName()] === 'true',
-                    'array' => explode(',', $this->environment[$param->getName()]),
-                    default => (string)$this->environment[$param->getName()],
-                };
-            }
-            if ($type->allowsNull()) {
-                return null;
+            foreach ($classes as $class) {
+                try {
+                    $object = $this->build($class);
+                    if ($parameter->areRequirementsMet($object)) {
+                        return $object;
+                    }
+                } catch (UnresolvableClass) {
+                }
             }
         }
-        if ($param->isDefaultValueAvailable()) {
-            return $param->getDefaultValue();
+        if (!in_array($parameter->getBasicType(), ['object', 'callable', 'resource'], true)) {
+            try {
+                return $this->environment->get($parameter->getBasicType(), $key, $param->getName());
+            } catch (NotInEnvironment) {
+                // ignore
+            }
+        }
+        if (!$parameter->hasDefault()) {
+            return $parameter->getDefault();
+        }
+        if ($parameter->isNullable()) {
+            return null;
         }
         throw new UnresolvableParameter("Cannot resolve parameter {$param->getName()}.");
     }
@@ -165,7 +160,7 @@ final class DependencyBuilder implements ContainerInterface
             return $this->cache[$class] = $this->build($this->interfaces[$class]);
         }
         try {
-            $rc = new ReflectionClass($class);
+            $rc = $this->reflectionFactory->class($class);
         } catch (ReflectionException $e) {
             throw new UnresolvableClass("Cannot resolve class $class.", 0, $e);
         } finally {
@@ -185,12 +180,8 @@ final class DependencyBuilder implements ContainerInterface
                 }
             }
         }
-        $params = $constructor->getParameters();
         $this->building[$class] = true;
-        $args = [];
-        foreach ($params as $param) {
-            $args[] = $this->getParamValue($param, $this->parameters, $class . '.' . $param->getName());
-        }
+        $args = $this->getArguments($constructor->getParameters(), $this->parameters);
         unset($this->building[$class]);
         try {
             return $this->cache[$class] = $rc->newInstanceArgs($args);
@@ -212,20 +203,30 @@ final class DependencyBuilder implements ContainerInterface
     {
         $object = $this->build($class);
         try {
-            $rm = new ReflectionMethod($object, $method);
+            $rm = $this->reflectionFactory->method($object, $method);
         } catch (ReflectionException $e) {
             throw new UnresolvableMethod("Cannot resolve method $class::$method.", 0, $e);
         }
-        $params = $rm->getParameters();
-        $args = [];
-        foreach ($params as $param) {
-            $args[] = $this->getParamValue($param, $variables, $param->getName());
-        }
+        $args = $this->getArguments($rm->getParameters(), $variables);
         try {
             return $rm->invokeArgs($object, $args);
         } catch (ReflectionException $e) {
             throw new UninvokableMethod("Cannot invoke method $class::$method.", 0, $e);
         }
+    }
+
+    /**
+     * @param array<int, ReflectionParameter> $parameters
+     * @param array<string, mixed> $variables
+     * @return array<int, mixed>
+     */
+    private function getArguments(array $parameters, array $variables): array
+    {
+        $args = [];
+        foreach ($parameters as $param) {
+            $args[] = $this->getParamValue($param, $variables, $param->getName());
+        }
+        return $args;
     }
 
     /**

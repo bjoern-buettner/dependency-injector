@@ -112,6 +112,9 @@ final class DependencyBuilder implements ContainerInterface
             return $variables[$key];
         }
         if ($type = $param->getType()) {
+            if ($type instanceof ReflectionUnionType) {
+                $type = $type->getTypes()[0];
+            }
             if (!$type->isBuiltin()) {
                 return $this->build($type->getName());
             }

@@ -20,6 +20,7 @@ use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;
 use ReflectionParameter;
+use ReflectionUnionType;
 use Symfony\Component\String\UnicodeString;
 
 /**
